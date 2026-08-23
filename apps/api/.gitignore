@@ -1,0 +1,4 @@
+# Modèles ML (poids lourds, à gérer hors Git)
+app/services/ai/model_theme_v2_fr/
+*.safetensors
+*.bin
