@@ -18,8 +18,16 @@ python-dotenv>=1.0.0
 pydantic>=2.7.0
 pydantic-settings>=2.2.0
 
+# Agent IA — appels HTTP (Mistral, WhatsApp Business Cloud API)
+requests>=2.31.0
+
 # NLP / IA déterministe
 langdetect>=1.0.9
+
+# Agent IA — classification thème/sentiment (modèle local model_theme_v2_fr)
+torch>=2.13.0
+transformers>=5.15.0
+PyYAML>=6.0.0
 
 # Tasks
 apscheduler>=3.10.4

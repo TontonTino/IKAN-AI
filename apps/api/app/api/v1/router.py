@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     dashboard,
     alertes,
     system,
+    agent,
 )
 
 api_router = APIRouter()
@@ -32,3 +33,4 @@ api_router.include_router(recommandations.router, prefix="/recommandations", tag
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(alertes.router, prefix="/alertes", tags=["Alertes"])
 api_router.include_router(system.router, prefix="/system", tags=["Système"])
+api_router.include_router(agent.router, prefix="/agent", tags=["Agent IA"])

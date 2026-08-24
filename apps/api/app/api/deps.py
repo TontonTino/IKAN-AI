@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status, Cookie
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_token
@@ -12,13 +13,17 @@ from app.db.session import get_db
 from app.models.utilisateur import Utilisateur
 from app.models.enums import UserRole
 
+# Permet à Swagger UI d'afficher le cadenas et d'injecter le token Bearer
+security_scheme = HTTPBearer(auto_error=False)
+
 
 def get_current_user(
+    auth_header: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     access_token: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
 ) -> Utilisateur:
     """
-    Extrait l'utilisateur courant depuis le cookie JWT HTTP-only.
+    Extrait l'utilisateur courant depuis l'en-tête Authorization Bearer ou depuis le cookie JWT.
     Lève une 401 si le token est absent ou invalide.
     """
     credentials_exception = HTTPException(
@@ -26,10 +31,12 @@ def get_current_user(
         detail="Non authentifié",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not access_token:
+    
+    token = auth_header.credentials if auth_header else access_token
+    if not token:
         raise credentials_exception
 
-    payload = decode_token(access_token)
+    payload = decode_token(token)
     if payload is None or payload.get("type") != "access":
         raise credentials_exception
 

@@ -1,0 +1,19 @@
+intentions:
+  - alertes_critiques
+  - statistiques_theme
+  - a_verifier
+  - resume_periode
+  - problemes_recurrents
+  - tendances_anomalies
+  - evolution_satisfaction
+  - autre
+
+descriptions:
+  alertes_critiques: "des alertes ou feedbacks critiques à traiter en priorité"
+  statistiques_theme: "la répartition ou les statistiques des feedbacks par thème"
+  a_verifier: "des feedbacks marqués comme à vérifier manuellement"
+  resume_periode: "un résumé de l'activité récente"
+  problemes_recurrents: "des problèmes qui reviennent plusieurs fois au même endroit"
+  tendances_anomalies: "un changement, une variation ou une anomalie par rapport à la période précédente"
+  evolution_satisfaction: "l'évolution de la satisfaction client dans le temps"
+  autre: "une question hors de ce périmètre"
