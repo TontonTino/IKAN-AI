@@ -371,6 +371,7 @@ function AssistantIAPageContent() {
   const [brouillons, setBrouillons] = useState<ActionAgent[]>([]);
   const [chargementBrouillons, setChargementBrouillons] = useState(false);
   const [onglet, setOnglet] = useState<"conversation" | "brouillons">("conversation");
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const finConversation = useRef<HTMLDivElement>(null);
 
   // Scroll auto
@@ -411,7 +412,11 @@ function AssistantIAPageContent() {
 
     try {
       // agence_id : envoyé seulement si l'utilisateur a un agence_id valide
-      const corps: Record<string, unknown> = { question: q, jours: 7 };
+      const corps: Record<string, unknown> = {
+        question: q,
+        jours: 7,
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+      };
       if (user?.agence_id) corps.agence_id = user.agence_id;
 
       const res = await fetch("/agent/ask", {
@@ -440,6 +445,9 @@ function AssistantIAPageContent() {
       }
 
       const data = await res.json();
+      if (data.conversation_id) {
+        setConversationId(data.conversation_id);
+      }
       setMessages(prev => prev.map(m =>
         m.id === idAgent
           ? {
