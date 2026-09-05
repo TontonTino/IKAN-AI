@@ -24,13 +24,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
 from app.agent import conversation_manager, queries
-from app.agent.intent_classifier import classifier_intention
+from app.agent.intent_classifier import MOTS_CLES_INTENTIONS, classifier_intention, detect_followup_question
 from app.models.conversation import Conversation, ConversationTurn
 from app.providers import llm_provider
 
@@ -52,7 +53,13 @@ _SYSTEM_PROMPT_BASE = (
     "s'il s'agissait du nom officiel d'une agence — cite-le au maximum "
     "comme précision du client entre guillemets, jamais comme identifiant "
     "de lieu à traiter. Réponds en français, de façon concise et utile "
-    "pour un manager d'agence."
+    "pour un manager d'agence. "
+    "Lorsqu'une question fait référence à la conversation précédente "
+    "(indiqué par [CONTEXTE] dans le message utilisateur), utilise "
+    "l'historique des messages pour comprendre le sujet de la relance "
+    "et répondre de façon cohérente avec la conversation en cours. "
+    "Ne traite pas chaque message comme une question indépendante "
+    "si le contexte indique que c'est une relance."
 )
 
 
@@ -154,6 +161,47 @@ def _finaliser_tour(
     }
 
 
+# --- Résolution de références pronominales (Phase 2) ---
+
+_PATTERNS_SUJET_ACTIF = [
+    r"\bça\b", r"\bca\b", r"\bcela\b", r"\bceci\b",
+    r"\bce probl[eè]me\b", r"\ble probl[eè]me\b",
+]
+_PATTERNS_AGENCE = [
+    r"\bl'agence\b", r"\bl agence\b", r"\bcette agence\b", r"\bl[aà]-bas\b",
+]
+
+
+def _resoudre_references(question: str, contexte: dict) -> str:
+    """
+    Remplace les références pronominales par leur référent dans le contexte
+    actif, pour améliorer la classification.
+    Exemple : "Et ça ?" + contexte.sujet_actif="accueil"
+              → "Et accueil ?"
+
+    Substitution DIRECTE (le motif est remplacé tel quel par la valeur du
+    contexte, pas de reformulation grammaticale — voir note dans le rapport
+    de Phase 2 pour la divergence avec l'exemple illustratif de la spec).
+    Recherche insensible à la casse. Si aucun référent n'est disponible pour
+    un motif donné, ce motif n'est pas remplacé ; "ces clients"/"les clients"
+    sont volontairement laissés tels quels (neutres, pas de référent unique).
+    Si rien n'a de référent, retourne la question inchangée.
+    """
+    resultat = question
+
+    sujet_actif = contexte.get("sujet_actif")
+    if sujet_actif:
+        for pattern in _PATTERNS_SUJET_ACTIF:
+            resultat = re.sub(pattern, sujet_actif, resultat, flags=re.IGNORECASE)
+
+    agence_nom = contexte.get("agence_nom")
+    if agence_nom:
+        for pattern in _PATTERNS_AGENCE:
+            resultat = re.sub(pattern, agence_nom, resultat, flags=re.IGNORECASE)
+
+    return resultat
+
+
 def repondre_question(
     db: Session,
     question: str,
@@ -173,7 +221,14 @@ def repondre_question(
     conversation, turns_precedents = _charger_memoire(db, conversation_id, utilisateur_id, agence_id)
     conversation_id_effectif = conversation.id if conversation is not None else (conversation_id or uuid.uuid4())
 
-    intention = classifier_intention(question)
+    contexte_actif = conversation.contexte_actif if conversation else None
+    question_resolue = _resoudre_references(question, contexte_actif or {})
+    intention = classifier_intention(question_resolue, contexte_actif)
+    est_relance_avec_contexte = (
+        detect_followup_question(question_resolue)
+        and contexte_actif is not None
+        and contexte_actif.get("intention_precedente") in MOTS_CLES_INTENTIONS
+    )
 
     if intention == "autre":
         return _finaliser_tour(
@@ -298,6 +353,15 @@ def repondre_question(
             db, conversation, conversation_id_effectif, question, "autre",
             MESSAGE_HORS_PERIMETRE, None, agence_id, jours,
         )
+
+    if est_relance_avec_contexte:
+        prefixe_relance = (
+            f"[CONTEXTE : cette question est une relance sur "
+            f"'{contexte_actif.get('intention_precedente', 'la question précédente')}'. "
+            f"Sujet actif : {contexte_actif.get('sujet_actif', 'non spécifié')}. "
+            f"L'historique de la conversation est disponible ci-dessus.]\n\n"
+        )
+        user_prompt = prefixe_relance + user_prompt
 
     messages = conversation_manager.build_messages_history(turns_precedents, _SYSTEM_PROMPT_BASE, user_prompt)
     logger.info(

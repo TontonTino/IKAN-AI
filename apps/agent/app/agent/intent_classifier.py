@@ -155,17 +155,38 @@ for _intention in MOTS_CLES_INTENTIONS:
         )
 
 
-def classifier_intention(question: str) -> str:
-    """
-    Détermine l'intention d'une question en langage naturel par correspondance
-    de mots-clés. Retourne un des labels définis dans intentions.yaml (hors
-    "autre"), ou "autre" si le texte est vide ou si aucun mot-clé ne correspond.
-    """
-    if not question or not question.strip():
-        return "autre"
 
-    texte_clean = _strip_accents(question.lower())
+# --- Détection de relance conversationnelle (Phase 2) ---
 
+# Mots de liaison signalant une question qui prolonge le tour précédent
+# plutôt qu'une question autonome. Vérifiés en préfixe (avec espace de fin
+# pour éviter un faux positif du type "etudiant").
+_MOTS_LIAISON_RELANCE = [
+    "et ", "mais ", "alors ", "donc ", "du coup ", "sinon ",
+    "pourtant ", "cependant ", "aussi ",
+]
+
+# Questions de suivi pures : le texte ENTIER (normalisé) doit correspondre
+# exactement à l'une de ces formes pour compter comme relance via ce critère.
+_QUESTIONS_SUIVI_PURES = {
+    "pourquoi", "pourquoi ?", "et pourquoi", "et pourquoi ?",
+    "depuis quand", "depuis quand ?", "depuis combien de temps",
+    "depuis combien de temps ?", "combien de temps",
+    "comment ca", "comment ca ?", "comment cela",
+    "lesquels", "lesquels ?", "laquelle", "laquelle ?",
+    "la-bas", "ca", "ca ?", "cela", "cela ?",
+    "et alors", "et alors ?", "c'est quoi", "c'est quoi ?",
+    "c est quoi", "qui", "qui ?", "quand", "quand ?",
+    "et apres", "et apres ?", "ensuite", "ensuite ?",
+    "tu peux developper", "developpe", "dis m'en plus",
+    "explique", "explique moi", "donne moi plus de details",
+    "quoi d'autre", "quoi dautre",
+}
+
+
+def _scores_mots_cles(texte_clean: str) -> dict[str, int]:
+    """Score de correspondance mots-clés par intention (factorisé — utilisé
+    à la fois par classifier_intention() et detect_followup_question())."""
     scores: dict[str, int] = {}
     for intention in _INTENTIONS_ORDONNEES:
         score = 0
@@ -174,6 +195,69 @@ def classifier_intention(question: str) -> str:
                 score += 2 if " " in mot else 1
         if score > 0:
             scores[intention] = score
+    return scores
+
+
+def detect_followup_question(question: str) -> bool:
+    """
+    Détecte si une question est une relance conversationnelle
+    plutôt qu'une question autonome.
+    Retourne True si la question semble être une relance.
+    """
+    if not question or not question.strip():
+        return False
+
+    texte_norm = _strip_accents(question.strip().lower())
+
+    # Critère 1 : commence par un mot de liaison.
+    for mot in _MOTS_LIAISON_RELANCE:
+        if texte_norm.startswith(mot):
+            return True
+
+    # Critère 2 : correspond exactement à une question de suivi pure connue.
+    if texte_norm in _QUESTIONS_SUIVI_PURES:
+        return True
+
+    # Critère 3 : très courte ET aucun mot-clé d'intention ne matche.
+    mots = texte_norm.strip("?!. ").split()
+    if len(mots) <= 4 and not _scores_mots_cles(texte_norm):
+        return True
+
+    return False
+
+
+def classifier_intention(question: str, contexte: dict | None = None) -> str:
+    """
+    Détermine l'intention d'une question en langage naturel par correspondance
+    de mots-clés. Retourne un des labels définis dans intentions.yaml (hors
+    "autre"), ou "autre" si le texte est vide ou si aucun mot-clé ne correspond.
+
+    Si `question` est détectée comme une relance conversationnelle (voir
+    detect_followup_question()) ET qu'un `contexte` valide est fourni avec
+    une "intention_precedente" reconnue, cette intention précédente est
+    réutilisée directement — sans passer par le scoring de mots-clés.
+
+    Si `question` est détectée comme une relance mais qu'AUCUN contexte
+    exploitable n'est disponible (pas de contexte, ou intention_precedente
+    absente/inconnue), "autre" est retourné directement : une relance sans
+    conversation pour la rattacher n'a pas de sens à deviner par mots-clés
+    (une question comme "Pourquoi ?" isolée ne doit pas être classée sur un
+    mot-clé accidentel — voir rapport Phase 2 pour la discussion de ce choix).
+    """
+    if not question or not question.strip():
+        return "autre"
+
+    est_relance = detect_followup_question(question)
+    contexte_valide = contexte is not None and contexte.get("intention_precedente") in MOTS_CLES_INTENTIONS
+
+    if est_relance and contexte_valide:
+        return contexte["intention_precedente"]
+
+    if est_relance and not contexte_valide:
+        return "autre"
+
+    texte_clean = _strip_accents(question.lower())
+    scores = _scores_mots_cles(texte_clean)
 
     if not scores:
         return "autre"
