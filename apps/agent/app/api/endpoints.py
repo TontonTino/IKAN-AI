@@ -34,11 +34,16 @@ webhook_router = APIRouter(prefix="/webhook", tags=["Webhook"])
 def ask(
     payload: AskRequest,
     db: Session = Depends(get_db),
-    _current_user: Utilisateur = Depends(require_agent_access),
+    current_user: Utilisateur = Depends(require_agent_access),
 ):
-    """Q&A conversationnel pour les managers."""
+    """Q&A conversationnel pour les managers, avec mémoire de conversation."""
     resultat = qa_service.repondre_question(
-        db, payload.question, agence_id=payload.agence_id, jours=payload.jours
+        db,
+        payload.question,
+        agence_id=payload.agence_id,
+        jours=payload.jours,
+        conversation_id=payload.conversation_id,
+        utilisateur_id=current_user.id,
     )
     return AskResponse(**resultat)
 

@@ -9,7 +9,7 @@ Colonnes conformes au guide d'intégration fourni par Lionel (Chief AI Officer).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, ForeignKey, Enum, func
+from sqlalchemy import String, Text, DateTime, Enum, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,11 +23,15 @@ class ActionAgent(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    # FK logique vers feedbacks.id (table du backend principal, hors de ce
-    # Base — la contrainte FK existe bien au niveau PostgreSQL, la table
-    # cible n'a juste pas de modèle ORM ici).
+    # FK logique vers feedbacks.id — contrainte DB déjà présente en base
+    # (voir alembic/versions/001_action_agent.py), mais ForeignKey ORM
+    # retiré : feedbacks est sur ReadOnlyBase, pas sur Base (celui-ci), donc
+    # SQLAlchemy ne peut pas résoudre la table pour l'ordre de flush et lève
+    # NoReferencedTableError au premier INSERT (confirmé empiriquement —
+    # même pattern que Conversation.utilisateur_id, voir
+    # app/models/conversation.py).
     feedback_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("feedbacks.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
     type_action: Mapped[TypeActionAgent] = mapped_column(Enum(TypeActionAgent), nullable=False)
     contenu_genere: Mapped[str] = mapped_column(Text, nullable=False)
@@ -35,8 +39,11 @@ class ActionAgent(Base):
     statut: Mapped[StatutActionAgent] = mapped_column(
         Enum(StatutActionAgent), nullable=False, default=StatutActionAgent.EN_ATTENTE, index=True
     )
+    # Même raison que feedback_id ci-dessus : utilisateurs est sur
+    # ReadOnlyBase, pas sur Base — ForeignKey ORM retiré, contrainte DB
+    # déjà présente en base.
     valide_par_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("utilisateurs.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), nullable=True
     )
     valide_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     date_creation: Mapped[datetime] = mapped_column(

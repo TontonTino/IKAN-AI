@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.db.session import Base
 from app.models import action_agent  # noqa — enregistre ActionAgent sur Base.metadata
+from app.models import conversation  # noqa — enregistre Conversation/ConversationTurn sur Base.metadata
 from app.config.settings import settings
 
 config = context.config
@@ -36,7 +37,7 @@ target_metadata = Base.metadata
 # Filet de sécurité supplémentaire : même si une table étrangère finissait
 # par apparaître dans target_metadata, on ne génère jamais de migration
 # pour autre chose que actions_agent.
-_TABLES_GEREES = {"actions_agent"}
+_TABLES_GEREES = {"actions_agent", "conversations", "conversation_turns"}
 
 
 def include_object(object, name, type_, reflected, compare_to):

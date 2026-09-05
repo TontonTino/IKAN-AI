@@ -19,12 +19,20 @@ class AskRequest(BaseModel):
     # un champ Optional[UUID], ce qui est le comportement souhaité ici.
     agence_id: Optional[UUID] = None
     jours: int = 7
+    # Absent/null = nouvelle conversation. Fourni = continuation d'une
+    # conversation existante (mémoire des tours précédents) — voir
+    # app.agent.conversation_manager.
+    conversation_id: Optional[UUID] = None
 
 
 class AskResponse(BaseModel):
     intention: str
     reponse: str
     donnees: Any = None
+    # Toujours retourné (même pour une conversation nouvellement créée) —
+    # le client le renvoie tel quel dans AskRequest.conversation_id pour
+    # poursuivre la même conversation au tour suivant.
+    conversation_id: UUID
 
 
 class BrouillonRequest(BaseModel):

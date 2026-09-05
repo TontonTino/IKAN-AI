@@ -21,11 +21,14 @@ répond alors honnêtement qu'il ne sait pas répondre, plutôt que deviner.
 """
 from __future__ import annotations
 
+import functools
+import logging
 import unicodedata
 from pathlib import Path
-from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 _INTENTIONS_PATH = Path(__file__).resolve().parent.parent / "config" / "intentions.yaml"
 
@@ -35,9 +38,21 @@ def _strip_accents(text: str) -> str:
     return "".join(c for c in text if unicodedata.category(c) != "Mn")
 
 
-def _load_intentions_config() -> dict[str, Any]:
+@functools.lru_cache(maxsize=1)
+def _load_intentions_config() -> dict[str, str]:
+    """
+    Charge intentions.yaml et retourne {intention: description}.
+    intentions.yaml est la SOURCE DE VÉRITÉ pour les descriptions et l'ordre
+    des intentions — pas pour les mots-clés, qui restent dans
+    MOTS_CLES_INTENTIONS ci-dessous pour des raisons de performance (aucun
+    accès disque au moment de classifier_intention()).
+
+    Mis en cache (@lru_cache) : lu une seule fois au chargement du module,
+    jamais relu à chaque requête.
+    """
     with open(_INTENTIONS_PATH, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        data = yaml.safe_load(f)
+    return data.get("descriptions", {})
 
 
 # Mots-clés / expressions par intention (formes sans accents). L'ordre des
@@ -48,7 +63,7 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
         "urgence", "urgences", "prioritaire", "prioritaires", "a traiter en urgence",
         "intervention", "grave", "graves", "danger",
         # --- enrichissement ---
-        "probleme", "serieux", "feu", "mauvais", "pire", "plainte", "insatisfait",
+        "serieux", "feu", "mauvais", "pire", "plainte", "insatisfait",
         "mecontent", "fache", "colere", "traiter", "regler", "resoudre", "intervenir",
     ],
     "a_verifier": [
@@ -74,7 +89,7 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
         # "revient" (seul) ajouté en plus de la liste fournie : "revient souvent"
         # ne matche pas "ce problème revient toujours" (pas de "souvent"), alors
         # que "revient" est la reformulation la plus naturelle de la récurrence.
-        "revient", "toujours", "encore", "encore une fois", "habituellement",
+        "revient", "reviennent", "toujours", "encore", "encore une fois", "habituellement",
         "systematiquement", "regulierement", "chaque semaine", "chaque mois",
         "persistant", "chronique",
     ],
@@ -115,7 +130,7 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
     ],
     "predictions_risques": [
         "predire", "prediction", "predictions", "anticiper", "risque", "risques",
-        "opportunite", "opportunites", "va empirer", "va s'ameliorer",
+        "va empirer", "va s'ameliorer",
         "tendance future", "prochain mois",
         # --- enrichissement ---
         "futur", "avenir", "prochainement", "bientot", "craindre", "inquieter",
@@ -126,6 +141,18 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
 }
 
 _INTENTIONS_ORDONNEES = list(MOTS_CLES_INTENTIONS.keys())
+
+# Chargée une seule fois au chargement du module (voir @lru_cache sur
+# _load_intentions_config). Validation : toute intention codée dans
+# MOTS_CLES_INTENTIONS doit avoir une description dans intentions.yaml —
+# un oubli n'est qu'un avertissement, pas une erreur bloquante.
+_DESCRIPTIONS_INTENTIONS = _load_intentions_config()
+for _intention in MOTS_CLES_INTENTIONS:
+    if _intention not in _DESCRIPTIONS_INTENTIONS:
+        logger.warning(
+            f"Intention '{_intention}' définie dans MOTS_CLES_INTENTIONS mais "
+            f"absente de intentions.yaml (aucune description associée)."
+        )
 
 
 def classifier_intention(question: str) -> str:

@@ -61,7 +61,6 @@ def get_current_user(
     if not user_id:
         raise credentials_exception
 
-    logger.warning(f"Recherche utilisateur avec id: {user_id}")
     user = (
         db.query(Utilisateur)
         .filter(Utilisateur.id == UUID(user_id), Utilisateur.active == True)  # noqa: E712

@@ -38,21 +38,42 @@ def _ensure_api_key() -> None:
     #     )
 
 
-def generate_text(system_prompt: str, user_prompt: str, max_tokens: int = 400) -> str:
-    """Appelle Groq et retourne le texte de la réponse générée."""
+def generate_text(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    messages_history: list[dict] | None = None,
+    max_tokens: int = 400,
+) -> str:
+    """
+    Appelle Groq et retourne le texte de la réponse générée.
+
+    Comportement par défaut (rétrocompatible, un seul tour) : messages =
+    [system_prompt, user_prompt]. Si `messages_history` est fourni — une
+    liste de messages OpenAI-compatible déjà construite, typiquement via
+    app.agent.conversation_manager.build_messages_history() — elle est
+    utilisée telle quelle comme payload à la place (elle inclut déjà le
+    system prompt, l'historique et le prompt courant : system_prompt/
+    user_prompt ne sont alors pas réutilisés pour construire les messages).
+    """
     _ensure_api_key()
 
     headers = {
         "Authorization": f"Bearer {settings.GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
+    messages = (
+        messages_history
+        if messages_history is not None
+        else [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    )
     payload = {
         "model": settings.GROQ_MODEL,
         "max_tokens": max_tokens,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "messages": messages,
     }
 
     response = requests.post(GROQ_URL, headers=headers, json=payload, timeout=60)
