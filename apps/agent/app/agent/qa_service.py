@@ -39,28 +39,39 @@ logger = logging.getLogger(__name__)
 
 MESSAGE_HORS_PERIMETRE = "je ne sais pas répondre à ça dans ce cadre"
 
-_SYSTEM_PROMPT_BASE = (
-    "Tu es l'assistant d'analyse de feedbacks clients d'IKANAI, pour un "
-    "opérateur télécom. Tu réponds UNIQUEMENT à partir des données JSON "
-    "fournies dans le message utilisateur. Tu n'inventes jamais de chiffre "
-    "ou de feedback qui n'est pas dans ces données. "
-    "IMPORTANT : le champ 'agence_nom' est le SEUL identifiant officiel de "
-    "lieu à utiliser dans ta réponse. Le champ 'commentaire' est le texte "
-    "libre écrit par le client — il peut mentionner un quartier, un point "
-    "de repère, ou un autre nom de lieu qui NE correspond PAS forcément à "
-    "l'agence administrative à laquelle le feedback est rattaché. Ne "
-    "présente jamais un lieu mentionné uniquement dans 'commentaire' comme "
-    "s'il s'agissait du nom officiel d'une agence — cite-le au maximum "
-    "comme précision du client entre guillemets, jamais comme identifiant "
-    "de lieu à traiter. Réponds en français, de façon concise et utile "
-    "pour un manager d'agence. "
-    "Lorsqu'une question fait référence à la conversation précédente "
-    "(indiqué par [CONTEXTE] dans le message utilisateur), utilise "
-    "l'historique des messages pour comprendre le sujet de la relance "
-    "et répondre de façon cohérente avec la conversation en cours. "
-    "Ne traite pas chaque message comme une question indépendante "
-    "si le contexte indique que c'est une relance."
-)
+_SYSTEM_PROMPT_BASE = """
+Tu es l'assistant d'analyse business d'IKANAI pour un opérateur télécom.
+Tu travailles aux côtés du manager comme un analyste business expert.
+
+PRINCIPE FONDAMENTAL — INSIGHT FIRST, DATA SECOND :
+Commence TOUJOURS par la conclusion la plus importante, pas par les données.
+Structure chaque réponse ainsi :
+1. SITUATION : ce qui se passe en une phrase directe
+2. INTERPRÉTATION : ce que cela signifie pour le manager
+3. CAUSE PROBABLE : si les données permettent de l'identifier
+   (utilise "semble", "probablement", "les données suggèrent" —
+   jamais de certitude absolue)
+4. RECOMMANDATION : une action concrète et spécifique
+5. DONNÉES : les chiffres qui justifient ton analyse
+   (résumés, pas un tableau exhaustif sauf si nécessaire)
+
+RÈGLES ABSOLUES :
+- Tu réponds UNIQUEMENT à partir des données JSON fournies
+- Tu n'inventes JAMAIS de chiffre ou de feedback absent des données
+- Le champ 'agence_nom' est le SEUL identifiant officiel de lieu
+- Un lieu mentionné dans 'commentaire' n'est jamais un nom d'agence officiel
+- Quand les données sont insuffisantes, dis-le clairement
+- Distingue toujours FAIT / INTERPRÉTATION / HYPOTHÈSE / RECOMMANDATION
+- Réponds en français, de façon concise et utile pour un manager
+
+POUR LES QUESTIONS DE SUIVI (marquées [CONTEXTE]) :
+Réponds directement à la question posée en utilisant l'historique.
+Ne répète pas les données du tour précédent sauf si nécessaire.
+Concentre-toi sur ce que le manager veut savoir maintenant.
+
+Si tu ne peux pas répondre à partir des données disponibles,
+dis-le clairement plutôt que d'improviser.
+"""
 
 
 def _resume_agregats(feedbacks: list[dict[str, Any]]) -> dict[str, Any]:
@@ -244,9 +255,11 @@ def repondre_question(
             "de priorité décroissant (champ 'score_priorite', qui combine "
             "criticité, fraîcheur et fréquence du thème), au format JSON :\n"
             f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Présente ces alertes pour un manager d'agence DANS L'ORDRE DE "
-            "PRIORITÉ fourni (ne les retrie pas toi-même) : lesquelles "
-            "traiter en premier et pourquoi, quels thèmes reviennent."
+            "Commence par identifier le problème dominant et son urgence. "
+            "Explique POURQUOI ces alertes sont préoccupantes (volume, "
+            "concentration, récurrence). Identifie l'agence ou le thème le "
+            "plus critique. Termine par une recommandation d'action concrète "
+            "et prioritaire. Les données détaillées viennent en dernier."
         )
 
     elif intention == "statistiques_theme":
@@ -254,8 +267,10 @@ def repondre_question(
         user_prompt = (
             "Voici la répartition des feedbacks par thème sur la période, "
             f"au format JSON :\n{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Présente cette répartition de façon claire pour un manager "
-            "d'agence."
+            "Commence par identifier le thème dominant et ce qu'il révèle "
+            "sur la satisfaction client. Explique si la répartition est "
+            "normale ou préoccupante. Donne une recommandation sur quoi "
+            "prioriser. Les chiffres viennent ensuite pour justifier."
         )
 
     elif intention == "a_verifier":
@@ -264,9 +279,10 @@ def repondre_question(
             "Voici les feedbacks signalés comme nécessitant une "
             f"vérification manuelle, au format JSON :\n"
             f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Liste-les pour un manager d'agence en indiquant pourquoi "
-            "chacun mérite d'être vérifié (utilise les infos disponibles : "
-            "note, commentaire, criticité)."
+            "Commence par expliquer pourquoi ces feedbacks nécessitent "
+            "attention (discordance entre note et sentiment). Évalue le "
+            "risque que ces cas représentent. Recommande une action de "
+            "vérification ciblée."
         )
 
     elif intention == "resume_periode":
@@ -275,12 +291,10 @@ def repondre_question(
         user_prompt = (
             "Voici les agrégats de l'activité feedbacks sur la période, au "
             f"format JSON :\n{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Rédige un résumé en langage naturel de l'activité récente pour "
-            "un manager d'agence. Utilise le champ "
-            "'theme_sentiment_le_plus_negatif' pour EXPLIQUER quelle est la "
-            "cause principale probable de l'insatisfaction sur cette "
-            "période (pas seulement lister les chiffres — dis POURQUOI ce "
-            "thème ressort), puis mets en avant les points d'attention."
+            "Commence par le verdict global de la période en une phrase. "
+            "Identifie la tendance principale (amélioration, dégradation, "
+            "stable). Mets en avant le fait le plus important que le "
+            "manager doit retenir. Les détails chiffrés viennent après."
         )
 
     elif intention == "problemes_recurrents":
@@ -289,10 +303,10 @@ def repondre_question(
             "Voici les problèmes récurrents détectés (même thème signalé "
             "plusieurs fois dans la même agence), au format JSON :\n"
             f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Explique à un manager d'agence quels problèmes reviennent "
-            "le plus souvent, où, et depuis quand (utilise "
-            "'derniere_occurrence'). Si la liste est vide, dis clairement "
-            "qu'aucun problème récurrent n'a été détecté sur la période."
+            "Commence par identifier le problème récurrent le plus grave. "
+            "Explique ce que la récurrence signifie (problème systémique, "
+            "pas un incident isolé). Recommande une action pour briser le "
+            "cycle. Les données de fréquence viennent en justification."
         )
 
     elif intention == "tendances_anomalies":
@@ -302,10 +316,10 @@ def repondre_question(
             "précédente de même durée, avec les anomalies déjà détectées "
             f"(champ 'anomalies'), au format JSON :\n"
             f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Explique à un manager d'agence ce qui a changé par rapport à "
-            "la période précédente. Si 'anomalies' est vide, dis "
-            "clairement qu'aucune variation significative n'a été détectée "
-            "— n'invente pas une tendance qui n'est pas dans les données."
+            "Commence par identifier si la situation s'améliore ou se "
+            "dégrade. Mets en avant l'anomalie la plus significative si "
+            "elle existe. Explique ce que cette tendance implique si elle "
+            "continue. Les comparaisons chiffrées viennent en support."
         )
 
     elif intention == "evolution_satisfaction":
@@ -314,11 +328,12 @@ def repondre_question(
             "Voici l'évolution du sentiment moyen sur plusieurs périodes "
             f"consécutives, de la plus ancienne à la plus récente, au format JSON :\n"
             f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Décris à un manager d'agence comment la satisfaction client a "
-            "évolué dans le temps : amélioration, dégradation, ou stable. "
-            "Base-toi uniquement sur les valeurs 'sentiment_moyen' fournies "
-            "(null = pas assez de données sur cette période, dis-le si "
-            "c'est le cas plutôt que de l'ignorer)."
+            "Calcule toi-même la tendance à partir des valeurs 'sentiment_moyen' "
+            "successives ('null' = pas assez de feedbacks sur cette période, "
+            "dis-le si c'est le cas plutôt que de l'ignorer). Commence par le "
+            "verdict (s'améliore / se dégrade / stable), explique ce qui "
+            "explique cette évolution si les données le permettent, et "
+            "recommande comment maintenir ou inverser la tendance."
         )
 
     elif intention == "predictions_risques":
@@ -336,14 +351,12 @@ def repondre_question(
             "Voici les risques et opportunités détectés par comparaison entre "
             "la période actuelle et la période précédente, au format JSON :\n"
             f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
-            "Pour un manager d'agence, formule chaque risque et chaque "
-            "opportunité en langage clair, sans jargon statistique. Pour "
-            "CHAQUE risque, propose une recommandation d'action concrète et "
-            "réalisable qui découle directement du signal fourni (jamais une "
-            "généralité du type 'faites attention à ce thème'). Si "
-            "'risques' et 'opportunites' sont tous les deux vides, dis "
-            "clairement qu'aucun signal notable n'a été détecté sur la "
-            "période — n'en invente pas."
+            "Le champ 'donnees_insuffisantes' indique si l'analyse est fiable. "
+            "Pour chaque RISQUE : commence par l'urgence, explique le signal "
+            "détecté et recommande une action préventive spécifique. Pour "
+            "chaque OPPORTUNITÉ : explique ce qui s'améliore et comment "
+            "capitaliser dessus. Distingue clairement ce qui est un FAIT "
+            "observé d'une PRÉDICTION basée sur une tendance."
         )
 
     else:
@@ -368,7 +381,9 @@ def repondre_question(
         f"Appel LLM pour intention='{intention}' avec {len(turns_precedents)} "
         f"tour(s) d'historique ({len(messages)} message(s) au total transmis au LLM)"
     )
-    reponse = llm_provider.generate_text(_SYSTEM_PROMPT_BASE, user_prompt, messages_history=messages)
+    reponse = llm_provider.generate_text(
+        _SYSTEM_PROMPT_BASE, user_prompt, messages_history=messages, max_tokens=600
+    )
 
     return _finaliser_tour(
         db, conversation, conversation_id_effectif, question, intention, reponse, donnees, agence_id, jours,
