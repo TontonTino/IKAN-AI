@@ -1,0 +1,63 @@
+# Versions épinglées exactes (générées via pip freeze sous Python 3.11.9,
+# voir versions_installees.txt) — plus de bornes >= pour éviter toute
+# résolution de dépendances côté pip/déploiement (source de conflits
+# constatée avec des bornes ouvertes, notamment sur pydantic/fastapi).
+# Pour mettre à jour : réinstaller sans bornes dans un venv jetable,
+# revalider (py_compile + démarrage uvicorn + appel DB réel), puis
+# régénérer ce fichier avec pip freeze.
+
+# Web framework
+fastapi==0.141.1
+uvicorn==0.52.4
+starlette==1.6.0
+
+# Database (même base PostgreSQL que le backend principal apps/api)
+sqlalchemy==2.0.52
+alembic==1.19.1
+psycopg2-binary==2.9.12
+Mako==1.4.1
+
+# Auth — vérification des JWT émis par le backend principal (même SECRET_KEY)
+python-jose==3.5.0
+cryptography==50.0.1
+ecdsa==0.19.2
+pyasn1==0.6.4
+rsa==4.9.1
+six==1.17.0
+cffi==2.1.1
+pycparser==3.0
+
+# Config & validation
+pydantic==2.13.5
+pydantic_core==2.46.5
+pydantic-settings==2.15.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+annotated-types==0.8.0
+annotated-doc==0.0.5
+python-dotenv==1.2.3
+PyYAML==6.0.3
+
+# HTTP clients (Mistral, WhatsApp Business Cloud API)
+requests==2.34.2
+urllib3==2.7.0
+idna==3.19
+certifi==2026.7.22
+charset-normalizer==3.5.1
+
+# Testing
+pytest==9.1.1
+httpx==0.28.1
+httpcore==1.0.9
+iniconfig==2.3.0
+pluggy==1.6.0
+Pygments==2.21.0
+packaging==26.3
+
+# Dépendances transitives (ASGI, event loop, etc.)
+anyio==4.14.2
+h11==0.16.0
+greenlet==3.5.5
+colorama==0.4.6
+click==8.5.0
+MarkupSafe==3.0.3

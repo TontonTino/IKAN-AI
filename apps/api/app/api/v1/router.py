@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     alertes,
     system,
     agent,
+    agent_proxy,
 )
 
 api_router = APIRouter()
@@ -33,4 +34,9 @@ api_router.include_router(recommandations.router, prefix="/recommandations", tag
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(alertes.router, prefix="/alertes", tags=["Alertes"])
 api_router.include_router(system.router, prefix="/system", tags=["Système"])
+# ATTENTION — deux implémentations concurrentes de l'agent IA coexistent ici,
+# à réconcilier avant merge (voir description de la PR) :
+# - agent.router          : agent intégré dans apps/api (déjà sur main)
+# - agent_proxy.router     : relais vers le microservice apps/agent (port 8001, cette PR)
 api_router.include_router(agent.router, prefix="/agent", tags=["Agent IA"])
+api_router.include_router(agent_proxy.router)

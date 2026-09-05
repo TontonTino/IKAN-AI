@@ -1,0 +1,21 @@
+intentions:
+  - alertes_critiques
+  - statistiques_theme
+  - a_verifier
+  - resume_periode
+  - problemes_recurrents
+  - tendances_anomalies
+  - evolution_satisfaction
+  - predictions_risques
+  - autre
+
+descriptions:
+  alertes_critiques: "Lister et prioriser les feedbacks de criticité élevée ou critique nécessitant une intervention"
+  statistiques_theme: "Répartition des feedbacks par thème sur une période"
+  a_verifier: "Lister les feedbacks signalés à vérification manuelle"
+  resume_periode: "Résumé en langage naturel de l'activité récente, avec les causes principales d'insatisfaction"
+  problemes_recurrents: "Identifier les problèmes qui reviennent plusieurs fois dans la même agence"
+  tendances_anomalies: "Détecter des variations anormales ou nouvelles par rapport à la période précédente"
+  evolution_satisfaction: "Suivre l'évolution du niveau de satisfaction client dans le temps, sur plusieurs périodes"
+  predictions_risques: "Prédire les risques, anticiper les problèmes, identifier les opportunités d'amélioration"
+  autre: "Hors du périmètre couvert"

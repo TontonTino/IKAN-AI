@@ -10,6 +10,11 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/agent': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/agent/, '/api/v1/agent-proxy/agent'),
+      },
     },
   },
 });
