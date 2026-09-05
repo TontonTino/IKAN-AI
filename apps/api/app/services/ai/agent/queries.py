@@ -36,6 +36,14 @@ _POIDS_CRITICITE = {"faible": 0.1, "moyenne": 0.4, "elevee": 0.7, "critique": 1.
 _SEUIL_RECURRENCE = 2  # nb minimum d'occurrences (même thème + même agence) pour être "récurrent"
 _SEUIL_VARIATION_ANOMALIE = 0.3  # variation relative (30%) au-delà de laquelle on signale une anomalie
 
+_SEUIL_HAUSSE_RISQUE = 0.3        # +30% d'occurrences pour signaler un risque
+_SEUIL_CRITICITE_RISQUE = 0.4     # taux de criticité actuel > 40% pour signaler un risque
+_SEUIL_BAISSE_OPPORTUNITE = 0.2   # -20% d'occurrences pour signaler une opportunité
+_SEUIL_CRITICITE_HAUTE = 0.5      # ancien taux de criticité > 50%
+_SEUIL_CRITICITE_BASSE = 0.3      # nouveau taux de criticité < 30%
+_MIN_FEEDBACKS_FIABLE = 5          # minimum de feedbacks par période pour une prédiction fiable
+_MIN_CAS_CRITIQUES_THEME_NOUVEAU = 2
+
 _SENTIMENT_SCORE_FALLBACK = {
     SentimentType.POSITIF: 1.0,
     SentimentType.NEUTRE: 0.0,
@@ -299,3 +307,128 @@ def query_evolution_satisfaction(
             "sentiment_moyen": sentiment_moyen,
         })
     return periodes
+
+
+def query_predictions(
+    db: Session, agence_id: Optional[UUID] = None, jours_periode: int = 7
+) -> dict[str, Any]:
+    """
+    Détecte, par thème, les risques (occurrences en forte hausse ET
+    criticité actuelle élevée, ou thème nouveau avec plusieurs cas
+    critiques/élevés) et les opportunités d'amélioration (occurrences en
+    forte baisse, ou taux de criticité qui retombe nettement), en comparant
+    la période actuelle à la période précédente de même durée.
+
+    Calcul 100% déterministe — le LLM ne fait que formuler une
+    recommandation à partir des données retournées ici.
+    """
+    maintenant = datetime.now(timezone.utc)
+    debut_actuelle = maintenant - timedelta(days=jours_periode)
+    debut_precedente = debut_actuelle - timedelta(days=jours_periode)
+
+    actuelle = _get_feedbacks_periode(db, agence_id, debut_actuelle, maintenant)
+    precedente = _get_feedbacks_periode(db, agence_id, debut_precedente, debut_actuelle)
+
+    periode_analysee = (
+        f"{debut_actuelle.strftime('%Y-%m-%d')} au {maintenant.strftime('%Y-%m-%d')} "
+        f"vs {debut_precedente.strftime('%Y-%m-%d')} au {debut_actuelle.strftime('%Y-%m-%d')}"
+    )
+
+    if len(actuelle) < _MIN_FEEDBACKS_FIABLE or len(precedente) < _MIN_FEEDBACKS_FIABLE:
+        return {
+            "risques": [],
+            "opportunites": [],
+            "periode_analysee": periode_analysee,
+            "donnees_insuffisantes": True,
+        }
+
+    def _stats_par_theme(feedbacks: list[dict[str, Any]]) -> dict[Any, dict[str, Any]]:
+        groupes: dict[Any, list[dict[str, Any]]] = {}
+        for f in feedbacks:
+            groupes.setdefault(f["theme_principal"], []).append(f)
+        stats: dict[Any, dict[str, Any]] = {}
+        for theme, items in groupes.items():
+            nb_critiques = sum(1 for i in items if i["criticite"] in _CRITICITES_ALERTE)
+            stats[theme] = {
+                "occurrences": len(items),
+                "nb_critiques": nb_critiques,
+                "taux_criticite": nb_critiques / len(items),
+            }
+        return stats
+
+    stats_actuelle = _stats_par_theme(actuelle)
+    stats_precedente = _stats_par_theme(precedente)
+    _vide = {"occurrences": 0, "nb_critiques": 0, "taux_criticite": 0.0}
+
+    risques: list[dict[str, Any]] = []
+    opportunites: list[dict[str, Any]] = []
+
+    for theme in sorted(set(stats_actuelle) | set(stats_precedente)):
+        actuel = stats_actuelle.get(theme, _vide)
+        precedent = stats_precedente.get(theme, _vide)
+        occ_actuel = actuel["occurrences"]
+        occ_precedent = precedent["occurrences"]
+        criticite_actuelle = actuel["taux_criticite"]
+        criticite_precedente = precedent["taux_criticite"]
+
+        # --- Risques ---
+        if occ_precedent == 0 and actuel["nb_critiques"] >= _MIN_CAS_CRITIQUES_THEME_NOUVEAU:
+            risques.append({
+                "theme": theme,
+                "raison": "theme_nouveau_critique",
+                "description": (
+                    f"Thème '{theme}' apparu cette période avec "
+                    f"{actuel['nb_critiques']} cas critique(s)/élevé(s)"
+                ),
+                "occurrences_actuelles": occ_actuel,
+                "occurrences_precedentes": occ_precedent,
+                "taux_criticite_actuel": round(criticite_actuelle, 3),
+            })
+        elif occ_precedent > 0:
+            variation = (occ_actuel - occ_precedent) / occ_precedent
+            if variation >= _SEUIL_HAUSSE_RISQUE and criticite_actuelle > _SEUIL_CRITICITE_RISQUE:
+                risques.append({
+                    "theme": theme,
+                    "raison": "hausse_occurrences_et_criticite",
+                    "description": (
+                        f"Thème '{theme}' en hausse de {variation * 100:.0f}% "
+                        f"avec {criticite_actuelle * 100:.0f}% de cas critiques/élevés"
+                    ),
+                    "occurrences_actuelles": occ_actuel,
+                    "occurrences_precedentes": occ_precedent,
+                    "taux_criticite_actuel": round(criticite_actuelle, 3),
+                })
+
+        # --- Opportunités ---
+        if occ_precedent > 0:
+            variation = (occ_actuel - occ_precedent) / occ_precedent
+            if variation <= -_SEUIL_BAISSE_OPPORTUNITE:
+                opportunites.append({
+                    "theme": theme,
+                    "raison": "baisse_occurrences",
+                    "description": (
+                        f"Thème '{theme}' en baisse de {abs(variation) * 100:.0f}% des occurrences"
+                    ),
+                    "occurrences_actuelles": occ_actuel,
+                    "occurrences_precedentes": occ_precedent,
+                })
+            elif criticite_precedente > _SEUIL_CRITICITE_HAUTE and criticite_actuelle < _SEUIL_CRITICITE_BASSE:
+                opportunites.append({
+                    "theme": theme,
+                    "raison": "baisse_criticite",
+                    "description": (
+                        f"Thème '{theme}' : taux de criticité passé de "
+                        f"{criticite_precedente * 100:.0f}% à {criticite_actuelle * 100:.0f}%"
+                    ),
+                    "taux_criticite_actuel": round(criticite_actuelle, 3),
+                    "taux_criticite_precedent": round(criticite_precedente, 3),
+                })
+
+    risques.sort(key=lambda r: r["taux_criticite_actuel"], reverse=True)
+
+    return {
+        "risques": risques,
+        "opportunites": opportunites,
+        "periode_analysee": periode_analysee,
+        "donnees_insuffisantes": False,
+    }

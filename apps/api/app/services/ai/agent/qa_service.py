@@ -148,6 +148,23 @@ def repondre_question(
             "client (amélioration, dégradation, stabilité)."
         )
 
+    elif intention == "predictions_risques":
+        donnees = queries.query_predictions(db, agence_id=agence_id, jours_periode=jours)
+        if donnees["donnees_insuffisantes"]:
+            return {
+                "intention": intention,
+                "reponse": "Pas encore assez de données pour établir des prédictions fiables.",
+                "donnees": donnees,
+            }
+        user_prompt = (
+            "Voici les risques et opportunités détectés en comparant la "
+            "période actuelle à la période précédente, au format JSON :\n"
+            f"{json.dumps(donnees, ensure_ascii=False)}\n\n"
+            "Pour un manager d'agence, explique chaque risque et chaque "
+            "opportunité, et propose une recommandation concrète et "
+            "actionnable pour chaque risque identifié."
+        )
+
     else:
         # Filet de sécurité si intentions.yaml évolue sans que ce service
         # ne soit mis à jour en conséquence.

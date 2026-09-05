@@ -6,6 +6,7 @@ intentions:
   - problemes_recurrents
   - tendances_anomalies
   - evolution_satisfaction
+  - predictions_risques
   - autre
 
 descriptions:
@@ -16,4 +17,5 @@ descriptions:
   problemes_recurrents: "des problèmes qui reviennent plusieurs fois au même endroit"
   tendances_anomalies: "un changement, une variation ou une anomalie par rapport à la période précédente"
   evolution_satisfaction: "l'évolution de la satisfaction client dans le temps"
+  predictions_risques: "prédire les risques, anticiper les problèmes, identifier les opportunités d'amélioration"
   autre: "une question hors de ce périmètre"

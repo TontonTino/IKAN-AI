@@ -40,6 +40,12 @@ _KEYWORDS: dict[str, list[str]] = {
     ],
     "statistiques_theme": ["repartition", "statistique", "par theme"],
     "resume_periode": ["resume", "synthese", "activite recente"],
+    "predictions_risques": [
+        "predire", "prediction", "anticiper", "risque",
+        "va empirer", "va s ameliorer", "tendance future", "prochain mois",
+        "futur", "avenir", "bientot", "craindre", "si ca continue",
+        "potentiel", "probable",
+    ],
 }
 
 
