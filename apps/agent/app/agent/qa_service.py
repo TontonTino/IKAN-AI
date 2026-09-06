@@ -247,7 +247,30 @@ def repondre_question(
             MESSAGE_HORS_PERIMETRE, None, agence_id, jours,
         )
 
-    if intention == "alertes_critiques":
+    # Relance confirmée : même intention que le tour précédent, avec de
+    # l'historique disponible. On NE recharge PAS les données depuis la DB
+    # (déjà transmises au LLM dans les tours précédents via l'historique de
+    # messages) — on construit un prompt minimal ciblé sur la question
+    # posée, pour éviter que le LLM ne régénère une analyse complète déjà
+    # donnée au tour précédent.
+    is_followup = (
+        len(turns_precedents) > 0
+        and contexte_actif is not None
+        and contexte_actif.get("intention_precedente") == intention
+    )
+
+    if is_followup:
+        donnees = None
+        user_prompt = (
+            f"[RELANCE] Le manager demande : '{question}'\n\n"
+            f"Contexte actif : sujet='{contexte_actif.get('sujet_actif')}', "
+            f"agence='{contexte_actif.get('agence_nom')}'\n\n"
+            f"L'historique complet de la conversation est disponible ci-dessus. "
+            f"Réponds UNIQUEMENT à la question posée en utilisant ce qui a déjà "
+            f"été analysé. Ne répète pas les données du tour précédent. "
+            f"Donne une réponse courte et directe."
+        )
+    elif intention == "alertes_critiques":
         donnees = queries.query_alertes_critiques(db, agence_id=agence_id, jours=jours)
         user_prompt = (
             "Voici la liste des feedbacks d'alerte critique (criticité "
