@@ -1,39 +1,73 @@
 import React, { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { dashboardApi, recommandationsApi } from '../../services/api';
+import { useNavigate } from 'react-router-dom';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
+import { dashboardApi, recommandationsApi, alertesApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
-import type { DashboardAgence, Recommandation } from '../../types';
+import type { DashboardAgence, Recommandation, Alerte } from '../../types';
+import PageHeader from '../../components/ui/PageHeader';
+import KpiCard from '../../components/ui/KpiCard';
+import InsightIACard from '../../components/ui/InsightIACard';
+import EphemeralAlertsBanner from '../../components/alerts/EphemeralAlertsBanner';
+import {
+  MessageSquareIcon,
+  TrendingUpIcon,
+  AlertTriangleIcon,
+  LightbulbIcon,
+  CheckCircleIcon,
+  CheckIcon,
+} from '../../components/common/Icons';
 
-const THEME_COLORS = ['#1a5c45', '#d97706', '#2563eb', '#7c3aed', '#16a34a', '#dc2626'];
+const THEME_COLORS = [
+  '#02302D', '#3C7730', '#75B72A', '#BCCF00', '#0284C7',
+  '#DC2626', '#8B5CF6', '#F59E0B', '#EC4899', '#06B6D4',
+  '#10B981', '#6366F1', '#D97706', '#14B8A6', '#64748B',
+];
 
-const PRIORITE_STYLE: Record<string, { bg: string; border: string; text: string; label: string }> = {
-  critical: { bg: '#fef2f2', border: '#ef4444', text: '#b91c1c', label: 'CRITIQUE' },
-  high: { bg: '#fff7ed', border: '#f97316', text: '#c2410c', label: 'ÉLEVÉE' },
-  medium: { bg: '#fefce8', border: '#eab308', text: '#a16207', label: 'MOYENNE' },
-  low: { bg: '#f0fdf4', border: '#22c55e', text: '#15803d', label: 'FAIBLE' },
+const THEME_LABELS: Record<string, string> = {
+  attente: 'Attente & Délais',
+  accueil: 'Accueil & Conseillers',
+  disponibilite_accessibilite: 'Accessibilité & Horaires',
+  tarifs: 'Tarifs & Frais',
+  qualite_produit: 'Qualité Produit & Forfaits',
+  proprete_cadre: 'Propreté & Cadre',
+  application_mobile: 'Application Mobile',
+  reseau: 'Réseau & Connexion',
+  facturation: 'Facturation & Prélèvements',
+  communication_information: 'Communication & Info',
+  livraison_logistique: 'Livraison & Suivi',
+  resolution_probleme: 'SAV & Résolution',
+  securite_confidentialite: 'Sécurité & Confidentialité',
+  disponibilite_produit: 'Disponibilité Stocks/Cartes',
+  personnalisation_besoin: 'Écoute & Personnalisation',
+  digital: 'Services Digitaux',
+  infrastructure: 'Locaux & Propreté',
+  service: 'Qualité de Service',
+  autre: 'Autre',
 };
 
-function KPICard({ label, value, sub, color, icon }: {
-  label: string; value: string | number; sub?: string; color?: string; icon?: string;
-}) {
-  return (
-    <div style={{
-      background: color || 'var(--color-primary)',
-      borderRadius: 'var(--radius)', padding: '18px 22px',
-      color: 'white', flex: 1, minWidth: '140px',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-    }}>
-      {icon && <div style={{ fontSize: '1.4rem', marginBottom: '4px' }}>{icon}</div>}
-      <div style={{ fontSize: '0.75rem', opacity: 0.85, marginBottom: '4px' }}>{label}</div>
-      <div style={{ fontSize: '1.8rem', fontWeight: 800 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.72rem', opacity: 0.75, marginTop: '2px' }}>{sub}</div>}
-    </div>
-  );
-}
+const PRIORITE_STYLE: Record<string, { bg: string; border: string; text: string; label: string }> = {
+  critical: { bg: '#FEE2E2', border: '#DC2626', text: '#991B1B', label: 'CRITIQUE' },
+  high: { bg: '#FEF3C7', border: '#D97706', text: '#92400E', label: 'ÉLEVÉE' },
+  medium: { bg: '#E0F2FE', border: '#0284C7', text: '#075985', label: 'MOYENNE' },
+  low: { bg: '#EBF5E9', border: '#3C7730', text: '#166534', label: 'FAIBLE' },
+};
 
 export default function DashboardAgencePage() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const [data, setData] = useState<DashboardAgence | null>(null);
+  const [alertes, setAlertes] = useState<Alerte[]>([]);
   const [recos, setRecos] = useState<Recommandation[]>([]);
   const [jours, setJours] = useState(30);
   const [loading, setLoading] = useState(true);
@@ -47,10 +81,14 @@ export default function DashboardAgencePage() {
     Promise.all([
       dashboardApi.agence(agenceId, jours),
       recommandationsApi.listAgence(agenceId),
-    ]).then(([d, r]) => {
-      setData(d.data);
-      setRecos(r.data);
-    }).finally(() => setLoading(false));
+      alertesApi.list(),
+    ])
+      .then(([d, r, a]) => {
+        setData(d.data);
+        setRecos(r.data);
+        setAlertes(a.data || []);
+      })
+      .finally(() => setLoading(false));
   }, [agenceId, jours]);
 
   const showToast = (msg: string) => {
@@ -68,221 +106,349 @@ export default function DashboardAgencePage() {
     }
   };
 
-  if (!agenceId) return (
-    <div style={{ padding: '32px', color: 'var(--color-text-muted)' }}>
-      Aucune agence rattachée à votre compte utilisateur.
-    </div>
-  );
+  if (!agenceId) {
+    return (
+      <div style={{ padding: '32px', color: '#64748B', fontWeight: 600 }}>
+        Aucune agence rattachée à votre compte utilisateur.
+      </div>
+    );
+  }
 
-  if (loading) return (
-    <div style={{ padding: '32px', color: 'var(--color-text-muted)' }}>
-      Chargement du tableau de bord d'agence...
-    </div>
-  );
+  if (loading) {
+    return (
+      <div style={{ padding: '32px', color: '#64748B', fontWeight: 600 }}>
+        Chargement du tableau de bord d'agence...
+      </div>
+    );
+  }
 
   if (!data) return <div style={{ padding: '32px' }}>Aucune donnée disponible.</div>;
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Toast */}
       {toast && (
-        <div style={{
-          position: 'fixed', top: '24px', right: '24px', zIndex: 1000,
-          background: '#1e293b', color: 'white', padding: '12px 20px',
-          borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)', fontSize: '0.9rem',
-        }}>{toast}</div>
+        <div
+          style={{
+            position: 'fixed',
+            top: '24px',
+            right: '24px',
+            zIndex: 1000,
+            background: '#02302D',
+            color: 'white',
+            padding: '12px 20px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.15)',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+          }}
+        >
+          {toast}
+        </div>
       )}
 
-      {/* ── Header Carte Agence (Conforme à l'image UI) ── */}
-      <div style={{
-        background: 'white',
-        borderRadius: '16px',
-        padding: '24px 28px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.04)',
-        border: '1px solid #E5E7EB',
-        marginBottom: '24px',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '18px' }}>
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '14px',
-            background: '#E8F5E9',
+      {/* ── 1. Page Header avec sélecteur de période ── */}
+      <PageHeader
+        title={data.agence_nom}
+        subtitle={`Pilotage opérationnel de votre point de vente — ${jours} derniers jours.`}
+      >
+        <div
+          style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M3 21H21M3 7L12 3L21 7V21H3V7Z" stroke="#02302D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-
-          <div>
-            <h1 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#02302D', margin: 0 }}>
-              {data.agence_nom}
-            </h1>
-            <p style={{ color: '#71717A', fontSize: '0.88rem', marginTop: '2px', margin: 0 }}>
-              Tableau de bord de votre agence — {jours} derniers jours
-            </p>
-          </div>
+            background: '#F1F5F2',
+            padding: '3px',
+            borderRadius: '12px',
+            gap: '2px',
+          }}
+        >
+          {[
+            { v: 7, l: '7 jours' },
+            { v: 30, l: '30 jours' },
+            { v: 90, l: '90 jours' },
+          ].map((item) => (
+            <button
+              key={item.v}
+              onClick={() => setJours(item.v)}
+              style={{
+                background: jours === item.v ? '#FFFFFF' : 'transparent',
+                color: jours === item.v ? '#02302D' : '#64748B',
+                border: 'none',
+                borderRadius: '9px',
+                padding: '6px 14px',
+                fontSize: '0.8rem',
+                fontWeight: jours === item.v ? 700 : 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                boxShadow: jours === item.v ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {item.l}
+            </button>
+          ))}
         </div>
+      </PageHeader>
 
-        <div style={{ position: 'relative', width: '100%' }}>
-          <select
-            value={jours}
-            onChange={(e) => setJours(Number(e.target.value))}
-            style={{
-              width: '100%',
-              padding: '14px 18px',
-              borderRadius: '12px',
-              border: '1px solid #E4E4E7',
-              background: '#FFFFFF',
-              fontFamily: 'inherit',
-              fontSize: '0.95rem',
-              fontWeight: 500,
-              color: '#18181B',
-              appearance: 'none',
-              WebkitAppearance: 'none',
-              cursor: 'pointer',
-              outline: 'none',
-            }}
-          >
-            <option value={7}>7 derniers jours</option>
-            <option value={30}>30 derniers jours</option>
-            <option value={90}>90 derniers jours</option>
-          </select>
-          <div style={{
-            position: 'absolute',
-            right: '18px',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none',
-            color: '#52525B',
-            fontSize: '0.75rem',
-          }}>
-            ▼
-          </div>
-        </div>
+      {/* ── 2. Alertes Agence Éphémères (Nouvelles alertes non vues — 15s) ── */}
+      <EphemeralAlertsBanner alerts={alertes} userId={user?.id} />
+
+      {/* ── 2bis. Résumé proactif IA ── */}
+      <InsightIACard agenceId={agenceId} jours={jours} onVoirAssistant={() => navigate('/agent')} />
+
+      {/* ── 2. Grille des 5 KPIs Agence (Style KpiCard) ── */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '20px',
+        }}
+      >
+        <KpiCard
+          icon={<MessageSquareIcon size={22} />}
+          label="Feedbacks reçus"
+          value={data.nombre_feedbacks}
+          trend={{ value: '+14%', isPositive: true }}
+          sparklineType="up"
+          subtitle={data.periode}
+        />
+
+        <KpiCard
+          icon={<TrendingUpIcon size={22} />}
+          label="Taux de satisfaction"
+          value={`${data.taux_satisfaction}%`}
+          trend={{ value: data.taux_satisfaction >= 80 ? 'Excellent' : 'À surveiller', isPositive: data.taux_satisfaction >= 70 }}
+          sparklineType={data.taux_satisfaction >= 70 ? 'up' : 'down'}
+          badgeColor={data.taux_satisfaction < 70 ? 'red' : 'green'}
+          subtitle="Score moyen de l'agence"
+        />
+
+        <KpiCard
+          icon={<AlertTriangleIcon size={22} />}
+          label="Avis négatifs"
+          value={data.nombre_negatifs}
+          trend={{ value: data.nombre_negatifs > 0 ? 'À traiter' : 'Parfait', isPositive: data.nombre_negatifs === 0 }}
+          badgeColor={data.nombre_negatifs > 0 ? 'red' : 'green'}
+          sparklineType={data.nombre_negatifs > 0 ? 'down' : 'up'}
+          subtitle="Sentiment négatif détecté"
+        />
+
+        <KpiCard
+          icon={<CheckCircleIcon size={22} />}
+          label="Discordances"
+          value={data.discordances}
+          trend={{ value: 'Alerte IA', isPositive: true }}
+          sparklineType="neutral"
+          subtitle="Ressenti Positif / Commentaire critique"
+        />
+
+        <KpiCard
+          icon={<LightbulbIcon size={22} />}
+          label="Idées clients"
+          value={data.nombre_suggestions}
+          trend={{ value: 'Boîte à idées', isPositive: true }}
+          sparklineType="up"
+          subtitle="Suggestions soumises"
+        />
       </div>
 
-      {/* KPIs */}
-      <div style={{ display: 'flex', gap: '14px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <KPICard icon="💬" label="Feedbacks reçus" value={data.nombre_feedbacks} sub={data.periode} />
-        <KPICard icon="😊" label="Taux de satisfaction" value={`${data.taux_satisfaction}%`} color={data.taux_satisfaction >= 80 ? '#16a34a' : data.taux_satisfaction >= 60 ? '#d97706' : '#dc2626'} />
-        <KPICard icon="🙁" label="Feedbacks négatifs" value={data.nombre_negatifs} color="#dc2626" />
-        <KPICard icon="⚡" label="Discordances" value={data.discordances} color="#d97706" sub="Note haute / Commentaire négatif" />
-        <KPICard icon="💡" label="Suggestions" value={data.nombre_suggestions} color="#0ea5e9" />
-      </div>
-
-      {/* Graphiques */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '24px' }}>
+      {/* ── 3. Graphiques d'Évolution & Thèmes ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
         {/* Évolution de la satisfaction */}
-        <div style={{ background: 'white', borderRadius: '12px', padding: '20px 24px', boxShadow: 'var(--shadow)' }}>
-          <h3 style={{ marginBottom: '16px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
-            📈 Évolution de la satisfaction
-          </h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data.tendances}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
-              <Tooltip formatter={(v: number) => [`${v}%`, 'Satisfaction']} />
-              <Line type="monotone" dataKey="taux" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div
+          style={{
+            background: '#FFFFFF',
+            borderRadius: '24px',
+            padding: '24px 28px',
+            border: '1px solid #E8ECE6',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#02302D' }}>
+              Évolution de la satisfaction de l'agence
+            </h3>
+            <div
+              style={{
+                background: '#EBF5E9',
+                color: '#3C7730',
+                borderRadius: '9999px',
+                padding: '3px 9px',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span className="live-dot" />
+              <span>En direct</span>
+            </div>
+          </div>
+
+          <div style={{ width: '100%', height: 230 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={data.tendances}>
+                <defs>
+                  <linearGradient id="gradAgence" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3C7730" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#3C7730" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#EDF2EC" />
+                <XAxis dataKey="date" tick={{ fill: '#94A3B8', fontSize: 11, fontWeight: 600 }} />
+                <YAxis domain={[0, 100]} tick={{ fill: '#94A3B8', fontSize: 11, fontWeight: 600 }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip formatter={(v: number) => [`${v}%`, 'Satisfaction']} />
+                <Area
+                  type="monotone"
+                  dataKey="taux"
+                  stroke="#3C7730"
+                  strokeWidth={2.8}
+                  fillOpacity={1}
+                  fill="url(#gradAgence)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Thèmes récurrents */}
-        <div style={{ background: 'white', borderRadius: '12px', padding: '20px 24px', boxShadow: 'var(--shadow)' }}>
-          <h3 style={{ marginBottom: '16px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
-            🏷️ Répartition des Thèmes
+        <div
+          style={{
+            background: '#FFFFFF',
+            borderRadius: '24px',
+            padding: '24px 28px',
+            border: '1px solid #E8ECE6',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 18px', fontSize: '1.05rem', fontWeight: 800, color: '#02302D' }}>
+            Répartition des Thèmes
           </h3>
           {data.themes.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={data.themes}
-                  dataKey="count"
-                  nameKey="theme"
-                  cx="50%" cy="50%"
-                  outerRadius={75}
-                  label={({ theme, pourcentage }) => `${theme} ${pourcentage}%`}
-                  fontSize={10}
-                >
-                  {data.themes.map((_, i) => (
-                    <Cell key={i} fill={THEME_COLORS[i % THEME_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: number, name: string) => [`${v} avis`, name]} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ width: '100%', height: 230 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={data.themes}
+                    dataKey="count"
+                    nameKey="theme"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={75}
+                    paddingAngle={3}
+                  >
+                    {data.themes.map((_, i) => (
+                      <Cell key={i} fill={THEME_COLORS[i % THEME_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number, name: string) => [`${v} avis`, THEME_LABELS[name] || name]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
-            <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', paddingTop: '60px', fontSize: '0.88rem' }}>
+            <div style={{ textAlign: 'center', color: '#64748B', paddingTop: '60px', fontSize: '0.88rem' }}>
               Aucune donnée thématique sur cette période.
             </div>
           )}
         </div>
       </div>
 
-      {/* Plan d'action & Recommandations IA */}
-      <div style={{ background: 'white', borderRadius: '12px', padding: '20px 24px', boxShadow: 'var(--shadow)' }}>
-        <h3 style={{ marginBottom: '16px', fontSize: '0.95rem', fontWeight: 700, color: '#1e293b' }}>
-          🤖 Plan d'action — Recommandations IA ({recos.length})
-        </h3>
+      {/* ── 4. Plan d'Action & Recommandations IA ── */}
+      <div
+        style={{
+          background: '#FFFFFF',
+          borderRadius: '24px',
+          padding: '26px 28px',
+          border: '1px solid #E8ECE6',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#02302D' }}>
+              Plan d'action & Recommandations IA ({recos.length})
+            </h3>
+            <p style={{ margin: '3px 0 0', fontSize: '0.84rem', color: '#64748B', fontWeight: 500 }}>
+              Actions concrètes suggérées automatiquement par l'IA pour traiter les points de douleur récurrents.
+            </p>
+          </div>
+        </div>
+
         {recos.length === 0 ? (
-          <div style={{ padding: '24px', textAlign: 'center', color: '#16a34a', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-            🎉 Aucune recommandation en attente ! Toutes les actions suggérées ont été traitées.
+          <div
+            style={{
+              padding: '24px',
+              textAlign: 'center',
+              color: '#3C7730',
+              background: '#EBF5E9',
+              borderRadius: '16px',
+              border: '1px solid #D5E8D3',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <CheckCircleIcon size={20} color="#3C7730" />
+            <span>Aucune recommandation en attente ! Toutes les actions suggérées ont été traitées.</span>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {recos.map((r) => {
-              const pStyle = PRIORITE_STYLE[r.priorite] || { bg: '#f8fafc', border: '#94a3b8', text: '#475569', label: r.priorite };
+              const pStyle = PRIORITE_STYLE[r.priorite] || {
+                 bg: '#F8FAFB',
+                 border: '#E2E8F0',
+                 text: '#475569',
+                 label: r.priorite,
+              };
               return (
-                <div key={r.id} style={{
-                  background: pStyle.bg,
-                  border: `1px solid ${pStyle.border}`,
-                  borderLeft: `5px solid ${pStyle.border}`,
-                  borderRadius: '8px',
-                  padding: '14px 18px',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1 }}>
-                      <span style={{
-                        background: pStyle.border,
-                        color: 'white',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        marginRight: '10px',
-                        display: 'inline-block',
-                      }}>
+                <div
+                  key={r.id}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E8ECE6',
+                    borderLeft: `5px solid ${pStyle.border}`,
+                    borderRadius: '16px',
+                    padding: '16px 20px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '16px',
+                    flexWrap: 'wrap',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span
+                        style={{
+                          background: pStyle.bg,
+                          color: pStyle.text,
+                          border: `1px solid ${pStyle.border}`,
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          fontSize: '0.7rem',
+                          fontWeight: 800,
+                        }}
+                      >
                         PRIORITÉ {pStyle.label}
                       </span>
-                      <span style={{ fontSize: '0.92rem', color: '#1e293b', lineHeight: 1.5 }}>
-                        {r.contenu}
-                      </span>
                     </div>
-
-                    <button
-                      onClick={() => marquerTraitee(r.id)}
-                      style={{
-                        background: 'var(--color-primary)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '6px 14px',
-                        fontSize: '0.82rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      ✓ Marquer comme traité
-                    </button>
+                    <span style={{ fontSize: '0.9rem', color: '#1E293B', lineHeight: 1.5, fontWeight: 600 }}>
+                      {r.contenu}
+                    </span>
                   </div>
+
+                  <button
+                    onClick={() => marquerTraitee(r.id)}
+                    className="btn-primary"
+                    style={{ fontSize: '0.8rem', padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <CheckIcon size={14} />
+                    <span>Marquer comme traité</span>
+                  </button>
                 </div>
               );
             })}

@@ -17,6 +17,7 @@
 import React, { useState, useEffect, useRef, Component } from "react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "../../hooks/useAuth";
+import InsightIACard from "../../components/ui/InsightIACard";
 
 // ─── Utilitaire : ID sans crypto.randomUUID ──────────────────────────────────
 function genererId(): string {
@@ -372,37 +373,12 @@ function AssistantIAPageContent() {
   const [chargementBrouillons, setChargementBrouillons] = useState(false);
   const [onglet, setOnglet] = useState<"conversation" | "brouillons">("conversation");
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [resumeProactif, setResumeProactif] = useState<{
-    insight: string;
-    niveau: "info" | "warning" | "critique";
-    actions: string[];
-  } | null>(null);
   const finConversation = useRef<HTMLDivElement>(null);
 
   // Scroll auto
   useEffect(() => {
     finConversation.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  // Analyse proactive à l'ouverture — silencieuse en cas d'échec, ne doit
-  // jamais bloquer ni perturber le reste du dashboard.
-  useEffect(() => {
-    const chargerResumeProactif = async () => {
-      try {
-        const res = await fetch("/agent/proactive-summary", {
-          credentials: "include",
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.insight && data.insight !== "Analyse indisponible.") {
-          setResumeProactif(data);
-        }
-      } catch {
-        // Silencieux — pas de bloc affiché si l'analyse proactive échoue.
-      }
-    };
-    chargerResumeProactif();
-  }, []);
 
   // Chargement des brouillons
   const chargerBrouillons = async () => {
@@ -526,37 +502,9 @@ function AssistantIAPageContent() {
 
         {/* Zone de conversation */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-          {resumeProactif && (
-            <div style={{
-              marginBottom: 20, padding: "14px 16px", borderRadius: 14,
-              display: "flex", gap: 10, alignItems: "flex-start",
-              boxShadow: "var(--shadow)",
-              background: resumeProactif.niveau === "critique" ? "#fef2f2"
-                : resumeProactif.niveau === "warning" ? "#fff7ed"
-                : "#f0fdf4",
-              border: `1px solid ${
-                resumeProactif.niveau === "critique" ? "#fecaca"
-                  : resumeProactif.niveau === "warning" ? "#fed7aa"
-                  : "#bbf7d0"
-              }`,
-            }}>
-              <span style={{ fontSize: "1rem", lineHeight: 1.55 }}>
-                {resumeProactif.niveau === "critique" ? "⚠️" : resumeProactif.niveau === "warning" ? "ℹ️" : "✓"}
-              </span>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontSize: "0.9rem", lineHeight: 1.55, color: "var(--color-text)" }}>
-                  {resumeProactif.insight}
-                </p>
-                {resumeProactif.actions.length > 0 && (
-                  <ul style={{ margin: "8px 0 0 18px", padding: 0, fontSize: "0.83rem", color: "var(--color-text-muted)" }}>
-                    {resumeProactif.actions.map((action, i) => (
-                      <li key={i} style={{ marginBottom: 2 }}>{action}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
+          <div style={{ marginBottom: 20 }}>
+            <InsightIACard jours={7} />
+          </div>
 
           {messages.length === 0 && (
             <div style={{ marginTop: 24 }}>
