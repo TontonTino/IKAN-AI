@@ -7,6 +7,7 @@ intentions:
   - tendances_anomalies
   - evolution_satisfaction
   - predictions_risques
+  - recommandations
   - autre
 
 descriptions:
@@ -18,4 +19,5 @@ descriptions:
   tendances_anomalies: "Détecter des variations anormales ou nouvelles par rapport à la période précédente"
   evolution_satisfaction: "Suivre l'évolution du niveau de satisfaction client dans le temps, sur plusieurs périodes"
   predictions_risques: "Prédire les risques, anticiper les problèmes, identifier les opportunités d'amélioration"
+  recommandations: "recommander des actions prioritaires et contextualisées"
   autre: "Hors du périmètre couvert"

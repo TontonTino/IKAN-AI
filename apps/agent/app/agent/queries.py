@@ -447,3 +447,94 @@ def query_predictions(
         "periode_analysee": periode_analysee,
         "donnees_insuffisantes": False,
     }
+
+
+_NB_ALERTES_PRIORITAIRES_MAX = 5
+
+
+def _tendance_globale(comparaison: dict[str, Any]) -> str:
+    """
+    Dérive une tendance globale unique ("degradation"/"amelioration"/
+    "stable"/"insuffisant") à partir de comparer_periodes().
+
+    Aucune des fonctions existantes ne retourne directement une "tendance
+    globale" : celle-ci est déduite ici des anomalies de type "sentiment"
+    et "criticite" déjà calculées par comparer_periodes() (mêmes seuils
+    déterministes que l'intention "tendances_anomalies", pas de nouveau
+    seuil inventé). Si la période précédente n'a aucun feedback, la
+    comparaison n'a pas de sens -> "insuffisant". Si les deux périodes ont
+    des feedbacks mais qu'aucune anomalie sentiment/criticité n'est
+    détectée -> "stable". Si les signaux sentiment et criticité se
+    contredisent (rare) -> "stable" par prudence, plutôt que de trancher.
+    """
+    if comparaison["periode_precedente"]["total"] == 0:
+        return "insuffisant"
+
+    degrade = False
+    ameliore = False
+    for anomalie in comparaison["anomalies"]:
+        if anomalie["type"] == "sentiment":
+            if anomalie["valeur_actuelle"] < anomalie["valeur_precedente"]:
+                degrade = True
+            else:
+                ameliore = True
+        elif anomalie["type"] == "criticite":
+            if anomalie["valeur_actuelle"] > anomalie["valeur_precedente"]:
+                degrade = True
+            else:
+                ameliore = True
+
+    if degrade and not ameliore:
+        return "degradation"
+    if ameliore and not degrade:
+        return "amelioration"
+    return "stable"
+
+
+def query_recommandations(
+    db: Session, agence_id: Optional[uuid.UUID] = None, jours: int = 7
+) -> dict[str, Any]:
+    """
+    Agrège les sorties des autres fonctions de requête (jamais le LLM) pour
+    produire la base factuelle d'un plan d'action priorisé. Voir
+    qa_service.repondre_question() pour la mise en forme LLM de ces données.
+    """
+    alertes = query_alertes_critiques(db, agence_id=agence_id, jours=jours)
+    problemes = query_problemes_recurrents(db, agence_id=agence_id, jours=jours)
+    predictions = query_predictions(db, agence_id=agence_id, jours_periode=jours)
+    comparaison = comparer_periodes(db, agence_id=agence_id, jours_periode=jours)
+
+    alertes_prioritaires = [
+        {
+            "agence_nom": f["agence_nom"],
+            "theme": f["theme_principal"],
+            "criticite": f["criticite"],
+            "score_priorite": f["score_priorite"],
+            "commentaire_exemple": f["commentaire"],
+        }
+        for f in alertes[:_NB_ALERTES_PRIORITAIRES_MAX]
+    ]
+
+    problemes_systemiques = [
+        {
+            "agence_nom": p["agence_nom"],
+            "theme": p["theme"],
+            "occurrences": p["occurrences"],
+            "criticite_max": p["criticite_max"],
+        }
+        for p in problemes
+    ]
+
+    risques_detectes = [
+        {"theme": r["theme"], "signal": r["signal"], "urgence": r["urgence"]}
+        for r in predictions["risques"]
+    ]
+
+    return {
+        "alertes_prioritaires": alertes_prioritaires,
+        "problemes_systemiques": problemes_systemiques,
+        "risques_detectes": risques_detectes,
+        "tendance_globale": _tendance_globale(comparaison),
+        "periode_analysee": predictions["periode_analysee"],
+        "donnees_disponibles": bool(alertes_prioritaires or problemes_systemiques or risques_detectes),
+    }

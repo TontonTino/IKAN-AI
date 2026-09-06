@@ -382,6 +382,62 @@ def repondre_question(
             "observé d'une PRÉDICTION basée sur une tendance."
         )
 
+    elif intention == "recommandations":
+        # Branche à part (retour direct, pas de passage par l'appel LLM
+        # partagé en fin de fonction) : le prompt demandé pour cette
+        # intention a son propre system prompt "consultant business" et son
+        # propre max_tokens=500, différents de _SYSTEM_PROMPT_BASE/600
+        # utilisés par toutes les autres intentions — même schéma que le
+        # retour anticipé de "predictions_risques" ci-dessus pour le cas
+        # donnees_insuffisantes.
+        donnees = queries.query_recommandations(db, agence_id=agence_id, jours=jours)
+        if not donnees.get("donnees_disponibles"):
+            return _finaliser_tour(
+                db, conversation, conversation_id_effectif, question, intention,
+                (
+                    "Je n'ai pas encore assez de données pour formuler des "
+                    "recommandations fiables. Continuez à collecter des "
+                    "feedbacks."
+                ),
+                donnees, agence_id, jours,
+            )
+
+        system_prompt_recommandations = (
+            "Tu es un consultant business expert. À partir des données "
+            "fournies, produis un plan d'action PRIORISÉ pour le manager.\n\n"
+            "Structure ta réponse STRICTEMENT ainsi :\n"
+            "🔴 URGENT (à traiter dans les 24h) :\n"
+            "- [action concrète et spécifique avec l'agence concernée]\n\n"
+            "🟡 IMPORTANT (cette semaine) :\n"
+            "- [action concrète]\n\n"
+            "🟢 À SURVEILLER :\n"
+            "- [action préventive]\n\n"
+            "RÈGLES :\n"
+            "- Chaque action doit mentionner l'agence ou le thème concerné\n"
+            "- Jamais d'action générique comme 'améliorer le service client'\n"
+            "- Maximum 2 actions par niveau de priorité\n"
+            "- Si un niveau n'a pas d'action justifiée par les données, "
+            "omets-le\n"
+            "- Termine par : 'Ces recommandations sont basées sur X "
+            "feedbacks analysés sur les Y derniers jours.'"
+        )
+        user_prompt_recommandations = (
+            "Voici les données agrégées (alertes prioritaires, problèmes "
+            "systémiques, risques détectés, tendance globale), au format "
+            f"JSON :\n{json.dumps(donnees, ensure_ascii=False)}"
+        )
+        messages_recommandations = conversation_manager.build_messages_history(
+            turns_precedents, system_prompt_recommandations, user_prompt_recommandations
+        )
+        reponse_recommandations = llm_provider.generate_text(
+            system_prompt_recommandations, user_prompt_recommandations,
+            messages_history=messages_recommandations, max_tokens=500,
+        )
+        return _finaliser_tour(
+            db, conversation, conversation_id_effectif, question, intention,
+            reponse_recommandations, donnees, agence_id, jours,
+        )
+
     else:
         # Filet de sécurité si intentions.yaml évolue sans que ce service
         # ne soit mis à jour en conséquence.
@@ -411,3 +467,149 @@ def repondre_question(
     return _finaliser_tour(
         db, conversation, conversation_id_effectif, question, intention, reponse, donnees, agence_id, jours,
     )
+
+
+# --- Analyse proactive à l'ouverture du dashboard (Phase 5) ---
+
+_SYSTEM_PROMPT_PROACTIF = (
+    "Tu es l'assistant IKANAI. Tu viens d'analyser les données "
+    "récentes et tu dois informer le manager des points importants "
+    "à surveiller, SANS qu'il t'ait posé de question. "
+    "Commence par 'J'ai analysé les données récentes.' si la "
+    "situation est normale, ou '⚠️ J'ai détecté quelque chose "
+    "d'important :' si niveau=warning ou critique. "
+    "Sois direct et concis (3-4 phrases maximum). "
+    "Termine par une recommandation d'action si niveau >= warning. "
+    "Ne mentionne jamais de scores techniques ni d'UUIDs."
+)
+
+# Seuils déterministes — voir docstring de generer_resume_proactif() pour
+# le choix de "variation de criticité" comme métrique de "variation".
+_SEUIL_VARIATION_CRITIQUE = 0.5
+_SEUIL_VARIATION_WARNING = 0.3
+_NB_ALERTES_CRITIQUE = 5
+_NB_ALERTES_WARNING = 2
+
+
+def _variation_criticite_max(anomalies: list[dict[str, Any]]) -> float:
+    """
+    Plus grande variation absolue du taux de criticité entre les deux
+    périodes, parmi les anomalies détectées par comparer_periodes().
+
+    NOTE DE PORTAGE : comparer_periodes() ne retourne pas de champ
+    "variation" générique — chaque type d'anomalie ("sentiment",
+    "criticite", "theme_nouveau", "theme_hausse") a sa propre forme, et
+    seul le type "criticite" porte des valeurs numériques (valeur_actuelle/
+    valeur_precedente, deux fractions 0-1) directement comparables au
+    seuil "variation > 50%" demandé. C'est celle utilisée ici — les
+    anomalies "theme_hausse" ont bien un pourcentage, mais uniquement
+    dans un texte de description libre, pas un champ numérique fiable à
+    parser.
+    """
+    variations = [
+        abs(a.get("valeur_actuelle", 0) - a.get("valeur_precedente", 0))
+        for a in anomalies
+        if a.get("type") == "criticite"
+    ]
+    return max(variations) if variations else 0.0
+
+
+def _construire_actions(
+    niveau: str,
+    theme_dominant: Optional[str],
+    agences_touchees: list[str],
+    risques: list[dict[str, Any]],
+) -> list[str]:
+    """
+    Dérive 1 à 3 actions courtes de façon déterministe, à partir des mêmes
+    données que celles envoyées au LLM — jamais en essayant de parser le
+    texte généré par le LLM (format libre, non fiable à extraire). Liste
+    vide si niveau="info" (rien à recommander en situation normale).
+    """
+    if niveau == "info":
+        return []
+
+    actions: list[str] = []
+    if theme_dominant:
+        if len(agences_touchees) == 1:
+            actions.append(f"Auditer les causes du thème '{theme_dominant}' à {agences_touchees[0]}")
+        else:
+            actions.append(f"Auditer les causes du thème '{theme_dominant}' dans les agences concernées")
+
+    for risque in risques:
+        theme = risque.get("theme")
+        if theme and theme != theme_dominant:
+            actions.append(f"Surveiller le thème '{theme}' (risque {risque.get('urgence', 'moyen')})")
+        if len(actions) >= 3:
+            break
+
+    return actions[:3]
+
+
+def generer_resume_proactif(
+    db: Session,
+    agence_id: Optional[uuid.UUID],
+    jours: int = 7,
+) -> dict[str, Any]:
+    """
+    Analyse proactive affichée à l'ouverture de la page Assistant IA, avant
+    toute question du manager. Détection 100% déterministe (aucune décision
+    métier laissée au LLM, qui ne fait que formuler le texte) — voir
+    _SYSTEM_PROMPT_PROACTIF.
+
+    Retourne {"insight": str, "niveau": "info"|"warning"|"critique",
+    "actions": list[str]}.
+
+    Mode dégradé : toute exception (DB, LLM) est capturée ici et retourne
+    un résultat neutre — ne doit JAMAIS faire échouer le chargement du
+    dashboard.
+    """
+    try:
+        alertes = queries.query_alertes_critiques(db, agence_id=agence_id, jours=jours)
+        comparaison = queries.comparer_periodes(db, agence_id=agence_id, jours_periode=jours)
+        predictions = queries.query_predictions(db, agence_id=agence_id, jours_periode=jours)
+
+        nb_alertes = len(alertes)
+        variation_max = _variation_criticite_max(comparaison.get("anomalies", []))
+        risques = predictions.get("risques", [])
+        risque_haute = any(r.get("urgence") == "haute" for r in risques)
+
+        if nb_alertes >= _NB_ALERTES_CRITIQUE or variation_max > _SEUIL_VARIATION_CRITIQUE or risque_haute:
+            niveau = "critique"
+        elif nb_alertes >= _NB_ALERTES_WARNING or variation_max > _SEUIL_VARIATION_WARNING:
+            niveau = "warning"
+        else:
+            niveau = "info"
+
+        par_theme: dict[str, int] = {}
+        for alerte in alertes:
+            par_theme[alerte["theme_principal"]] = par_theme.get(alerte["theme_principal"], 0) + 1
+        theme_dominant = max(par_theme, key=par_theme.get) if par_theme else None
+        agences_touchees = sorted({a["agence_nom"] for a in alertes if a.get("agence_nom")})
+
+        contexte_proactif = {
+            "nb_alertes": nb_alertes,
+            "theme_dominant": theme_dominant,
+            "agences_touchees": agences_touchees,
+            "anomalies": comparaison.get("anomalies", []),
+            "risques": risques,
+            "opportunites": predictions.get("opportunites", []),
+            "donnees_insuffisantes": predictions.get("donnees_insuffisantes", False),
+        }
+
+        user_prompt = (
+            f"Niveau détecté par le système : {niveau}.\n"
+            "Contexte de l'analyse, au format JSON :\n"
+            f"{json.dumps(contexte_proactif, ensure_ascii=False)}"
+        )
+        insight = llm_provider.generate_text(_SYSTEM_PROMPT_PROACTIF, user_prompt, max_tokens=300)
+
+        actions = _construire_actions(niveau, theme_dominant, agences_touchees, risques)
+
+        return {"insight": insight, "niveau": niveau, "actions": actions}
+    except Exception:
+        logger.warning(
+            "Échec de la génération du résumé proactif — mode dégradé.",
+            exc_info=True,
+        )
+        return {"insight": "Analyse indisponible.", "niveau": "info", "actions": []}

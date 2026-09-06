@@ -65,6 +65,9 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
         # --- enrichissement ---
         "serieux", "feu", "mauvais", "pire", "plainte", "insatisfait",
         "mecontent", "fache", "colere", "traiter", "regler", "resoudre", "intervenir",
+        # --- Phase 4 : audit 20 formulations naturelles ---
+        "ne va pas", "qui ne va pas", "preoccupant", "preoccupante",
+        "preoccupantes", "preoccupants",
     ],
     "a_verifier": [
         "verifier", "verification", "a verifier", "controler", "controle",
@@ -92,6 +95,14 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
         "revient", "reviennent", "toujours", "encore", "encore une fois", "habituellement",
         "systematiquement", "regulierement", "chaque semaine", "chaque mois",
         "persistant", "chronique",
+        # --- Phase 4 : audit 20 formulations naturelles ---
+        "pattern", "patterns", "plaignent toujours", "se plaignent toujours",
+        # "ne s ameliore pas" (sans apostrophe, tel que fourni dans la
+        # correction demandée) ne matche jamais une saisie réelle en
+        # français ("qu'est-ce qui ne s'améliore pas ?") — _strip_accents()
+        # ne supprime que les accents, pas les apostrophes. Variante avec
+        # apostrophe ajoutée à la place (seule forme qui matche réellement) :
+        "ne s'ameliore pas",
     ],
     "tendances_anomalies": [
         "tendance", "tendances", "anomalie", "anomalies", "variation", "variations",
@@ -127,6 +138,18 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
         # l'emportent jamais sur une intention plus spécifique en cas d'égalité.
         "rapport", "apercu", "global", "recemment", "semaine", "mois",
         "cette semaine", "ce mois", "aujourd'hui", "hier", "derniers",
+        # --- Phase 4 : audit 20 formulations naturelles ---
+        # "vue d ensemble" (espace) existe déjà ci-dessus ; "vue d'ensemble"
+        # (apostrophe) est la forme réellement tapée par un manager
+        # ("Vue d'ensemble s'il te plaît") — absente jusqu'ici, ajoutée.
+        "vue d'ensemble",
+        # Expression ×2 pour départager l'égalité avec tendances_anomalies
+        # sur le mot-clé partagé "recemment" (ex. "qu'est-ce qui s'est
+        # passé récemment ?"). La forme demandée "quest ce qui s est passe"
+        # (sans apostrophe ni tiret) ne matche jamais une saisie réelle —
+        # remplacée par "s'est passe" (accents supprimés, apostrophe
+        # conservée), qui matche la phrase réelle et généralise mieux.
+        "s'est passe",
     ],
     "predictions_risques": [
         "predire", "prediction", "predictions", "anticiper", "risque", "risques",
@@ -137,6 +160,45 @@ MOTS_CLES_INTENTIONS: dict[str, list[str]] = {
         "attention a", "surveiller", "alerter", "preparer", "prevenir",
         "avant que", "si ca continue", "potentiel", "probable", "chance",
         "possibilite",
+        # --- Phase 4 : audit 20 formulations naturelles ---
+        "mal tourner", "menace", "menaces",
+        # "a l horizon" (sans apostrophe) ne matche pas la saisie réelle
+        # ("à l'horizon") — variante avec apostrophe ajoutée. Redondant en
+        # pratique ici car "menaces" (ci-dessus) suffit déjà à couvrir le
+        # cas de test, gardé pour d'autres formulations futures.
+        "a l'horizon",
+        # Idem pour "signal(aux) d alarme" (sans apostrophe) vs la saisie
+        # réelle "signal(aux) d'alarme" :
+        "signal d'alarme", "signaux d'alarme",
+        # Idem pour "m inquieter" vs "m'inquiéter" (déjà couvert à 1 point
+        # par "inquieter" seul ci-dessus, mais l'expression à 2 points
+        # renforce la marge face aux égalités) :
+        "m'inquieter",
+        # Idem pour "s aggraver" / "risque de s aggraver" vs la saisie
+        # réelle "s'aggraver" — nécessaire pour départager la collision par
+        # sous-chaîne avec "grave" (mot-clé alertes_critiques, qui matche
+        # accidentellement à l'intérieur de "aggraver") :
+        "s'aggraver", "risque de s'aggraver",
+    ],
+    "recommandations": [
+        "que faire", "quoi faire", "que me conseilles tu",
+        "que me recommandes tu", "recommandation", "recommandations",
+        "plan d action", "plan d'action", "actions a prendre",
+        "actions prioritaires", "comment reagir", "comment ameliorer",
+        "que devrais je faire", "que dois je faire",
+        "par ou commencer", "aide moi a decider",
+        "conseils", "conseil", "next steps", "etapes suivantes",
+        "quelles actions", "quelle action",
+        # --- Phase 6 : correction apostrophe/tiret (même bug que Phase 4) ---
+        # _strip_accents() ne supprime que les accents, ni les apostrophes ni
+        # les tirets. Les formes fournies "que me conseilles tu",
+        # "que me recommandes tu", "que devrais je faire", "que dois je faire"
+        # et "aide moi a decider" (espaces) ne matchent jamais une saisie
+        # réelle en français, qui contractent avec un tiret ("Que dois-je
+        # faire ?", cas de test explicite de la Phase 6) ou "aide-moi".
+        # Variantes avec tiret ajoutées à côté des formes fournies :
+        "que me conseilles-tu", "que me recommandes-tu",
+        "que devrais-je faire", "que dois-je faire", "aide-moi a decider",
     ],
 }
 
